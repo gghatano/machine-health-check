@@ -1,0 +1,14 @@
+[project]
+name = "machine-health-check"
+version = "0.1.0"
+description = "Ubuntu machine health metrics collector"
+requires-python = ">=3.12"
+dependencies = [
+    "psutil",
+    "python-dotenv",
+    "requests",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.32,<0.12"]
+build-backend = "uv_build"

@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# uv / virtual environment
+.venv/
+
+# Environment variables / secrets
+.env
+.env.*
+
+# Runtime state
+state.json
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
