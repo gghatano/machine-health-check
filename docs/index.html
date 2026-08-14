@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>マシンメトリクス ダッシュボード</title>
+<meta name="description" content="Ubuntu マシンの CPU / メモリ / ディスク / ネットワークを時系列で表示します。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232a78d6'/%3E%3Cpath d='M2 11l3-4 3 3 3-6 3 7' fill='none' stroke='white' stroke-width='1.6' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="page-head">
+  <div class="page-head-main">
+    <h1>マシンメトリクス</h1>
+    <p class="page-head-sub" id="host-label">読み込み中…</p>
+  </div>
+  <div class="page-head-actions">
+    <span class="fetched-at" id="fetched-at"></span>
+    <button type="button" id="reload-btn" class="btn">更新</button>
+  </div>
+</header>
+
+<p class="banner" id="banner" role="status" hidden></p>
+
+<section class="status-strip" aria-label="収集状態">
+  <div class="status-card status-card-state" id="state-card">
+    <span class="state-icon" id="state-icon" aria-hidden="true"></span>
+    <div>
+      <p class="status-value" id="state-label">読み込み中</p>
+      <p class="status-note" id="state-note"></p>
+    </div>
+  </div>
+  <div class="status-card">
+    <p class="status-key">最新データ</p>
+    <p class="status-value" id="latest-ts">—</p>
+    <p class="status-note" id="latest-age"></p>
+  </div>
+  <div class="status-card">
+    <p class="status-key">稼働時間</p>
+    <p class="status-value" id="uptime">—</p>
+    <p class="status-note" id="uptime-note"></p>
+  </div>
+  <div class="status-card">
+    <p class="status-key">欠測（表示期間）</p>
+    <p class="status-value" id="gap-count">—</p>
+    <p class="status-note" id="gap-note"></p>
+  </div>
+</section>
+
+<div class="filters">
+  <div class="range-group" role="group" aria-label="表示期間">
+    <button type="button" class="range-btn" data-range="24h" aria-pressed="true">24時間</button>
+    <button type="button" class="range-btn" data-range="7d" aria-pressed="false">1週間</button>
+    <button type="button" class="range-btn" data-range="30d" aria-pressed="false">1ヶ月</button>
+  </div>
+  <label class="host-filter" id="host-filter" hidden>
+    ホスト
+    <select id="host-select"></select>
+  </label>
+</div>
+
+<section class="tiles" id="tiles" aria-label="最新の値"></section>
+
+<main class="charts" id="charts"></main>
+
+<details class="table-view" id="table-view">
+  <summary>データを表で見る</summary>
+  <div class="table-scroll" id="table-host"></div>
+</details>
+
+<footer class="page-foot">
+  <p>
+    データ元:
+    <a id="sheet-link" href="#" rel="noopener">Google スプレッドシート（metrics シート）</a>
+    ／ 収集間隔 30分 ／ 時刻は表示している端末のタイムゾーンです。
+  </p>
+  <p>欠測（記録が無い期間）は 0 として描かず、線を途切れさせて網掛けで示します。</p>
+</footer>
+
+<script type="module" src="assets/app.js"></script>
+</body>
+</html>
