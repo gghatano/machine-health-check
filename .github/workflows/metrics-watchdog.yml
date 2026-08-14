@@ -1,0 +1,56 @@
+name: metrics watchdog
+
+# Ubuntu 自身で監視すると、Ubuntu が止まったときに監視も止まってしまう。
+# ここでは GitHub Actions からスプレッドシートの最新 timestamp だけを見て、
+# 記録が途切れていれば Discord へ通知する。
+
+on:
+  schedule:
+    # 30分間隔。GitHub の schedule は数分〜十数分遅れることがあるが、
+    # しきい値(既定90分)に対しては十分な粒度。
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 通知を送らず、判定結果の表示だけ行う
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metrics-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      # 「すでに通知したか」を実行間で引き継ぎ、同じ障害で通知が続かないようにする。
+      # キャッシュが失われた場合は、最悪1回だけ通知が重複する。
+      - name: 通知状態を復元
+        uses: actions/cache@v6
+        with:
+          path: .watchdog-state.json
+          key: metrics-watchdog-state-${{ github.run_id }}
+          restore-keys: metrics-watchdog-state-
+
+      - name: 欠測を確認して通知
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          MISSING_AFTER_MINUTES: '90'
+          REPEAT_ALERT_HOURS: '6'
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: uv run python -m machine_health_check.watchdog
+
+      - name: 状態ファイルを用意（キャッシュ保存の警告を避ける）
+        if: always()
+        run: test -f .watchdog-state.json || echo '{}' > .watchdog-state.json
