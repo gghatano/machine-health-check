@@ -2,6 +2,8 @@ name: Monitor Ubuntu Metrics
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
 
 jobs:
   monitor:
