@@ -2,8 +2,20 @@ name: Monitor Ubuntu Metrics
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 通知を送らず、判定結果の表示だけ行う
+        type: boolean
+        default: false
   schedule:
     - cron: "*/15 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monitor-metrics
+  cancel-in-progress: false
 
 jobs:
   monitor:
@@ -19,8 +31,27 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # 「すでに通知したか」を実行間で引き継ぎ、同じ障害で通知が続かないようにする。
+      # キャッシュが失われた場合は、最悪1回だけ通知が重複する。
+      - name: Restore notification state
+        uses: actions/cache@v4
+        with:
+          path: .monitor-state.json
+          key: monitor-state-${{ github.run_id }}
+          restore-keys: monitor-state-
+
       - name: Check latest metrics
         env:
           GOOGLE_SCRIPT_URL: ${{ secrets.GOOGLE_SCRIPT_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          THRESHOLD_MINUTES: "60"
+          REPEAT_ALERT_HOURS: "6"
+          # Apps Script はコールドスタートで十数秒かかることがあるため、長めに待ってリトライする
+          REQUEST_TIMEOUT_SECONDS: "45"
+          REQUEST_RETRIES: "3"
+          DRY_RUN: ${{ inputs.dry_run }}
         run: uv run -m machine_health_check.monitor
+
+      - name: Keep the state file for caching
+        if: always()
+        run: test -f .monitor-state.json || echo '{}' > .monitor-state.json
