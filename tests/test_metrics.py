@@ -204,11 +204,14 @@ class TestCollectMetrics:
         assert metrics["recv_mbps"] == 0.0
         assert metrics["sent_mbps"] == 0.0
 
-    def test_saves_state_for_next_run(self, fake_psutil, fixed_now, state_file):
+    def test_does_not_save_state_by_itself(self, fake_psutil, fixed_now, state_file):
+        """state の保存は送信が成功したあとに main() が行う。
+
+        ここで保存してしまうと、送信に失敗した回の通信量が次回のデルタから
+        抜け落ちて、そのまま失われる。
+        """
         metrics = collect_metrics()
 
-        saved = json.loads(state_file.read_text(encoding="utf-8"))
-
-        assert saved["bytes_recv"] == 2_000_000
-        assert saved["bytes_sent"] == 1_000_000
-        assert saved["timestamp"] == metrics["timestamp"]
+        assert not state_file.exists()
+        assert metrics["bytes_recv"] == 2_000_000
+        assert metrics["bytes_sent"] == 1_000_000
