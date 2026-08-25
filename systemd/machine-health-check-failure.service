@@ -1,0 +1,8 @@
+[Unit]
+Description=Notify a failed Machine Health Check run
+
+[Service]
+Type=oneshot
+User=hatanotakuma
+WorkingDirectory=/home/hatanotakuma/works/machine-health-check
+ExecStart=/home/hatanotakuma/.local/bin/uv run python -m machine_health_check.notify_failure machine-health-check.service

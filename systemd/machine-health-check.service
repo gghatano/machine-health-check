@@ -1,0 +1,23 @@
+[Unit]
+Description=Machine Health Check
+After=network-online.target
+Wants=network-online.target
+# 送信に失敗した回を Discord へ通知する（単発の失敗を見逃さないため）
+OnFailure=machine-health-check-failure.service
+# 壊れている状態で再試行を繰り返さないよう、10分あたり3回までに制限する
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+User=hatanotakuma
+WorkingDirectory=/home/hatanotakuma/works/machine-health-check
+ExecStart=/home/hatanotakuma/.local/bin/uv run python -m machine_health_check.main
+# アプリ側のリトライ(45秒×3回)でも送れなかった場合の保険。スロット内で1分後に再試行する
+Restart=on-failure
+RestartSec=60
+# 設定を直さないと解決しない失敗(4xx やトークン不一致)では再試行しない
+RestartPreventExitStatus=2
+
+[Install]
+WantedBy=multi-user.target

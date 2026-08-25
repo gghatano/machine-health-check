@@ -109,10 +109,6 @@ def collect_metrics() -> dict:
         "drops_out": network.dropout,
     }
 
-    save_state(
-        bytes_recv=network.bytes_recv,
-        bytes_sent=network.bytes_sent,
-        timestamp=now_iso,
-    )
-
+    # state の保存はここでは行わない。送信が成功した回だけ進めることで、
+    # 送信に失敗した回の通信量が次回のデルタに含まれるようにする（main.py 参照）。
     return metrics

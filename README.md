@@ -41,43 +41,51 @@ uv run python -m machine_health_check.main
 | `JSONDecodeError`（HTML が返っている） | デプロイのアクセス権が「全員」になっていない、または URL が古い |
 | `KeyError: 'GOOGLE_SCRIPT_URL'` | `.env` が無い、またはリポジトリ直下以外で実行している |
 
+### 送信の再試行
+
+Apps Script はコールドスタート時に応答が遅れる。journal の実測では、送信が成功した回でも
+最大23秒かかっていた（中央値4秒）。そのため送信は次の設定で行う。
+
+| 項目 | 既定値 | 環境変数 |
+| --- | --- | --- |
+| タイムアウト | 45秒 | `SEND_TIMEOUT_SECONDS` |
+| リトライ回数 | 3回（5秒 → 10秒待ち） | `SEND_RETRIES` |
+
+タイムアウト・接続失敗・5xx はリトライする。一方、**4xx とトークン不一致はリトライしない**。
+どちらも設定を直さないと解決しないため、終了コード `2` で即座に終わる
+（`systemd` 側もこの終了コードでは再試行しない）。
+
+`404` が返るのは、たいてい再デプロイで `/exec` の URL が変わったまま `.env` が古いとき。
+
+### 送信に失敗した回の扱い
+
+`state.json`（通信量の差分計算に使う）は、**送信が成功した回だけ**更新する。
+失敗した回で更新してしまうと、その回の通信量がどこにも記録されないまま失われるため。
+
+失敗した次の回は、欠測していた期間ぶんを合計したデルタになる。ダッシュボードの
+転送量グラフは、欠測直後の点を描画から除外している。
+
 ### 定期送信の仕組み（systemd timer）
 
 30分間隔の実行は systemd のシステムタイマーで行っている。ユーザー単位（`--user`）ではなく
 システム単位なので、`systemctl` に `--user` は付けない。
 
-- `/etc/systemd/system/machine-health-check.timer`
-- `/etc/systemd/system/machine-health-check.service`
+ユニットファイルはリポジトリの `systemd/` にある。
 
-```ini
-# machine-health-check.timer
-[Unit]
-Description=Run Machine Health Check every 30 minutes
+| ファイル | 役割 |
+| --- | --- |
+| `systemd/machine-health-check.timer` | 30分間隔の起動 |
+| `systemd/machine-health-check.service` | 収集と送信の実行 |
+| `systemd/machine-health-check-failure.service` | 送信が失敗した回を Discord へ通知 |
 
-[Timer]
-OnCalendar=*-*-* *:00,30:00
-Persistent=true
-Unit=machine-health-check.service
+インストール・更新は次のとおり。
 
-[Install]
-WantedBy=timers.target
-```
-
-```ini
-# machine-health-check.service
-[Unit]
-Description=Machine Health Check
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-User=hatanotakuma
-WorkingDirectory=/home/hatanotakuma/works/machine-health-check
-ExecStart=/home/hatanotakuma/.local/bin/uv run python -m machine_health_check.main
-
-[Install]
-WantedBy=multi-user.target
+```bash
+sudo cp systemd/machine-health-check.service \
+        systemd/machine-health-check.timer \
+        systemd/machine-health-check-failure.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now machine-health-check.timer
 ```
 
 `WorkingDirectory` は必ずリポジトリ直下にする。`.env` の読み込みと、ネットワーク転送量の
@@ -88,6 +96,31 @@ WantedBy=multi-user.target
 
 `.service` 自体は `disabled` で正しい。起動するのはタイマーであり、
 `.service` を enable すると起動のたびに余計な1回が走る。
+
+#### 失敗したときの再試行と通知
+
+アプリ側のリトライ（45秒×3回）で送れなかった場合の保険として、`.service` に次を入れている。
+
+```ini
+Restart=on-failure
+RestartSec=60
+RestartPreventExitStatus=2   # 設定の問題(4xx など)では再試行しない
+StartLimitIntervalSec=600
+StartLimitBurst=3            # 壊れている状態で再試行を繰り返さない
+```
+
+`Restart=on-failure` は `Type=oneshot` でも使える（`always` と `on-success` だけが拒否される）。
+
+さらに `OnFailure=machine-health-check-failure.service` で、失敗した回を Discord に通知する。
+しきい値（60分）に届かない単発の失敗は journal にしか残らず観測されないため、
+1回の失敗でも気づけるようにしている。通知には journal の直近の例外行を含める。
+
+通知先は `.env` の `DISCORD_WEBHOOK_URL` を使う。未設定なら何も送らずに正常終了する。
+
+```bash
+# 通知の文面を確認する（Webhook が設定されていれば実際に飛ぶ）
+uv run python -m machine_health_check.notify_failure machine-health-check.service
+```
 
 ### 状態とログを見る
 

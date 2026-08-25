@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Machine Health Check every 30 minutes
+
+[Timer]
+OnCalendar=*-*-* *:00,30:00
+Persistent=true
+Unit=machine-health-check.service
+
+[Install]
+WantedBy=timers.target
