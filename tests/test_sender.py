@@ -2,7 +2,7 @@ import pytest
 import requests
 
 from machine_health_check import sender as sender_module
-from machine_health_check.sender import ConfigurationError, send_metrics
+from machine_health_check.sender import ConfigurationError, NotFoundError, send_metrics
 
 
 class FakeResponse:
@@ -172,9 +172,23 @@ class TestRetries:
         assert waits == [5, 10]
 
 
-class TestConfigurationErrors:
-    def test_does_not_retry_4xx(self, monkeypatch):
-        """404 は再デプロイでURLが変わった状態。リトライしても直らない。"""
+class TestNotFound:
+    def test_retries_404_and_succeeds(self, monkeypatch):
+        """Apps Script は正常なデプロイに対しても断続的に404を返す。
+
+        実測: 同じURLで 17:00 成功 → 17:30 が404 → 18:00 成功。
+        """
+        outcomes = [FakeResponse(status_code=404), FakeResponse({"ok": True})]
+
+        def fake_post(url, json=None, timeout=None):
+            return outcomes.pop(0)
+
+        monkeypatch.setattr(sender_module.requests, "post", fake_post)
+
+        assert send() == {"ok": True}
+        assert outcomes == []
+
+    def test_gives_up_after_retrying_404(self, monkeypatch):
         attempts = []
 
         def fake_post(url, json=None, timeout=None):
@@ -183,7 +197,30 @@ class TestConfigurationErrors:
 
         monkeypatch.setattr(sender_module.requests, "post", fake_post)
 
-        with pytest.raises(ConfigurationError, match="404"):
+        with pytest.raises(RuntimeError) as error:
+            send(retries=3)
+
+        assert len(attempts) == 3
+        # 本当にURLが古いケースの切り分けができるようヒントを添える
+        assert "GOOGLE_SCRIPT_URL" in str(error.value)
+
+    def test_404_is_not_a_configuration_error(self):
+        assert not issubclass(NotFoundError, ConfigurationError)
+
+
+class TestConfigurationErrors:
+    @pytest.mark.parametrize("status", [400, 401, 403])
+    def test_does_not_retry_other_4xx(self, monkeypatch, status):
+        """権限やデプロイ設定の問題は、リトライしても直らない。"""
+        attempts = []
+
+        def fake_post(url, json=None, timeout=None):
+            attempts.append(1)
+            return FakeResponse(status_code=status)
+
+        monkeypatch.setattr(sender_module.requests, "post", fake_post)
+
+        with pytest.raises(ConfigurationError, match=str(status)):
             send()
 
         assert len(attempts) == 1
