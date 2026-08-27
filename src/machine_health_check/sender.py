@@ -12,9 +12,15 @@ DEFAULT_RETRY_WAIT_SECONDS = 5
 
 
 class ConfigurationError(RuntimeError):
-    """リトライしても直らない失敗。URLやトークンなど設定側を直す必要がある。
+    """リトライしても直らない失敗。トークンや権限など設定側を直す必要がある。"""
 
-    例: 再デプロイで `/exec` のURLが変わったまま `.env` が古いと 404 が返る。
+
+class NotFoundError(RuntimeError):
+    """Apps Script が 404 を返した。リトライする価値がある。
+
+    正常なデプロイに対しても断続的に 404 が返ることを実測で確認している
+    （同じURLで、前後の回は成功している）。URLが古いケースと区別できないため、
+    まずリトライし、全部だめだったときに設定を疑うヒントを出す。
     """
 
 
@@ -49,7 +55,15 @@ def send_metrics(
             if attempt < retries:
                 sleep(retry_wait * attempt)
 
-    raise RuntimeError(f"メトリクスの送信に{retries}回失敗しました: {last_error!r}")
+    message = f"メトリクスの送信に{retries}回失敗しました: {last_error!r}"
+    if isinstance(last_error, NotFoundError):
+        # 断続的な404と、URLが古いケースの切り分けはここで促す
+        message += (
+            "（404 が続く場合は、再デプロイでURLが変わっていないか"
+            " GOOGLE_SCRIPT_URL を確認してください）"
+        )
+
+    raise RuntimeError(message)
 
 
 def _post_once(url: str, payload: dict, timeout: float) -> dict:
@@ -60,10 +74,12 @@ def _post_once(url: str, payload: dict, timeout: float) -> dict:
     )
 
     status = getattr(response, "status_code", None)
+    if status == 404:
+        raise NotFoundError("Apps Script が 404 を返しました。")
     if status is not None and 400 <= status < 500:
         raise ConfigurationError(
             f"Apps Script が {status} を返しました。"
-            "再デプロイでURLが変わっていないか、GOOGLE_SCRIPT_URL を確認してください。"
+            "デプロイのアクセス権と GOOGLE_SCRIPT_URL を確認してください。"
         )
 
     response.raise_for_status()
